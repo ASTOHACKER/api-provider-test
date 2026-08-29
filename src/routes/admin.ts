@@ -3,6 +3,12 @@ import type { DB } from "../queries.js"
 import { queries } from "../queries.js"
 import { generateApiKey } from "../lib/keys.js"
 
+function publicProvider(provider: any) {
+  if (!provider) return provider
+  const { api_key: _apiKey, api_key_encrypted: _encryptedKey, ...safe } = provider
+  return { ...safe, has_api_key: Boolean(_apiKey) }
+}
+
 export function createAdminRoutes(getDb: () => DB, adminKey: string) {
   const app = new Hono()
 
@@ -63,11 +69,15 @@ export function createAdminRoutes(getDb: () => DB, adminKey: string) {
   })
 
   // --- Providers ---
-  app.get("/providers", async (c) => c.json({ providers: await queries.listProviders(getDb()) }))
+  app.get("/providers", async (c) => {
+    const providers = await queries.listProviders(getDb())
+    return c.json({ providers: providers.map(publicProvider) })
+  })
 
   app.post("/providers", async (c) => {
     const db = getDb()
     const q = c.req.query()
+    if (!q.name || !q.base_url) return c.json({ error: "name and base_url required" }, 400)
     const models = q.models ? q.models.split(",").map((m) => m.trim()) : []
     const id = await queries.insertProvider(db, {
       name: q.name || "",
@@ -77,7 +87,7 @@ export function createAdminRoutes(getDb: () => DB, adminKey: string) {
       models,
     })
     const provider = await queries.getProviderById(db, id)
-    return c.json({ provider }, 201)
+    return c.json({ provider: publicProvider(provider) }, 201)
   })
 
   app.patch("/providers/:id", async (c) => {
@@ -92,7 +102,7 @@ export function createAdminRoutes(getDb: () => DB, adminKey: string) {
     if (q.api_key !== undefined) sets.api_key = q.api_key
     await queries.updateProvider(db, id, sets)
     const provider = await queries.getProviderById(db, id)
-    return c.json({ provider })
+    return c.json({ provider: publicProvider(provider) })
   })
 
   // --- Stats ---

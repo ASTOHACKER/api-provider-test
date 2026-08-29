@@ -1,5 +1,6 @@
 import postgres from "postgres"
 import type { ApiKey, Customer, Provider, Quota, ProviderConfig } from "./types.js"
+import { encryptCredential } from "./lib/credentials.js"
 
 let sql: ReturnType<typeof postgres> | null = null
 
@@ -50,6 +51,7 @@ CREATE TABLE IF NOT EXISTS providers (
   type TEXT NOT NULL CHECK(type IN ('openai','anthropic')),
   base_url TEXT NOT NULL,
   api_key TEXT NOT NULL DEFAULT '',
+  api_key_encrypted TEXT NOT NULL DEFAULT '',
   models TEXT NOT NULL DEFAULT '[]',
   enabled BOOLEAN NOT NULL DEFAULT TRUE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -76,6 +78,19 @@ CREATE INDEX IF NOT EXISTS idx_usage_provider ON usage_logs(provider_id);
 
 export async function migrate(db: ReturnType<typeof postgres>) {
   await db.unsafe(SCHEMA)
+  await db`ALTER TABLE providers ADD COLUMN IF NOT EXISTS api_key_encrypted TEXT NOT NULL DEFAULT ''`
+
+  const providers = await db<{ id: number; api_key: string; api_key_encrypted: string }[]>`
+    SELECT id, api_key, api_key_encrypted FROM providers
+  `
+  for (const provider of providers) {
+    if (!provider.api_key || provider.api_key_encrypted) continue
+    await db`
+      UPDATE providers
+      SET api_key = '', api_key_encrypted = ${encryptCredential(provider.api_key)}
+      WHERE id = ${provider.id}
+    `
+  }
 }
 
 export async function seedProviders(db: ReturnType<typeof postgres>, configs: ProviderConfig[]) {
@@ -83,8 +98,8 @@ export async function seedProviders(db: ReturnType<typeof postgres>, configs: Pr
   if (existing[0]?.c > 0) return
   for (const c of configs) {
     await db`
-      INSERT INTO providers (name, type, base_url, api_key, models, enabled)
-      VALUES (${c.name}, ${c.type}, ${c.base_url}, ${c.api_key}, ${JSON.stringify(c.models)}, TRUE)
+      INSERT INTO providers (name, type, base_url, api_key, api_key_encrypted, models, enabled)
+      VALUES (${c.name}, ${c.type}, ${c.base_url}, '', ${c.api_key ? encryptCredential(c.api_key) : ''}, ${JSON.stringify(c.models)}, TRUE)
     `
   }
 }

@@ -27,6 +27,9 @@ npm run dev
 
 Server starts on `http://0.0.0.0:8787`. The database schema is created automatically on first run (via migrations), and default providers are seeded from your env vars.
 
+Provider API keys added through the admin API are encrypted at rest with
+`CREDENTIAL_ENCRYPTION_KEY` and are never returned by provider listing endpoints.
+
 ## Architecture
 
 ```

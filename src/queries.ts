@@ -1,8 +1,18 @@
 import type { PostgresError } from "postgres"
 import type { ApiKey, Customer, Provider, Quota } from "./types.js"
 import type { DB } from "./db.js"
+import { decryptCredential, encryptCredential } from "./lib/credentials.js"
 
 export type { DB } from "./db.js"
+
+type StoredProvider = Provider & { api_key_encrypted: string }
+
+function hydrateProvider(provider: StoredProvider): Provider {
+  return {
+    ...provider,
+    api_key: provider.api_key_encrypted ? decryptCredential(provider.api_key_encrypted) : provider.api_key,
+  }
+}
 
 export const queries = {
   getApiKey: async (db: DB, key: string) =>
@@ -82,17 +92,21 @@ export const queries = {
               ${row.status}, ${row.latency_ms}, ${row.error})
     `,
 
-  listProviders: async (db: DB) => (await db<Provider[]>`SELECT * FROM providers ORDER BY id`) as Provider[],
+  listProviders: async (db: DB) => {
+    const providers = await db<StoredProvider[]>`SELECT * FROM providers ORDER BY id`
+    return providers.map(hydrateProvider)
+  },
 
   getProviderForModel: async (db: DB, model: string) => {
-    const providers = await db<Provider[]>`SELECT * FROM providers WHERE enabled = TRUE ORDER BY id`
-    return providers.find((provider) => {
+    const providers = await db<StoredProvider[]>`SELECT * FROM providers WHERE enabled = TRUE ORDER BY id`
+    const provider = providers.find((candidate) => {
       try {
-        return JSON.parse(provider.models || "[]").includes(model)
+        return JSON.parse(candidate.models || "[]").includes(model)
       } catch {
         return false
       }
     })
+    return provider ? hydrateProvider(provider) : undefined
   },
 
   listCustomers: async (db: DB) => (await db<Customer[]>`SELECT * FROM customers ORDER BY id`) as Customer[],
@@ -131,20 +145,27 @@ export const queries = {
 
   insertProvider: async (db: DB, c: { name: string; type: string; base_url: string; api_key: string; models: string[] }) => {
     const res = await db<{ id: number }[]>`
-      INSERT INTO providers (name, type, base_url, api_key, models)
-      VALUES (${c.name}, ${c.type}, ${c.base_url}, ${c.api_key}, ${JSON.stringify(c.models)}) RETURNING id
+      INSERT INTO providers (name, type, base_url, api_key, api_key_encrypted, models)
+      VALUES (${c.name}, ${c.type}, ${c.base_url}, '', ${c.api_key ? encryptCredential(c.api_key) : ''}, ${JSON.stringify(c.models)}) RETURNING id
     `
     return res[0].id
   },
 
-  getProviderById: async (db: DB, id: number) =>
-    (await db<Provider[]>`SELECT * FROM providers WHERE id = ${id} LIMIT 1`)[0],
+  getProviderById: async (db: DB, id: number) => {
+    const provider = (await db<StoredProvider[]>`SELECT * FROM providers WHERE id = ${id} LIMIT 1`)[0]
+    return provider ? hydrateProvider(provider) : undefined
+  },
 
   updateProvider: async (db: DB, id: number, sets: Record<string, unknown>) => {
-    const keys = Object.keys(sets)
+    const storedSets = { ...sets }
+    if ("api_key" in storedSets) {
+      storedSets.api_key_encrypted = storedSets.api_key ? encryptCredential(String(storedSets.api_key)) : ""
+      storedSets.api_key = ""
+    }
+    const keys = Object.keys(storedSets)
     if (keys.length === 0) return
     const setClause = keys.map((k, i) => `${k} = $${i + 1}`).join(", ")
-    const values = keys.map((k) => (k === "models" ? JSON.stringify(sets[k]) : sets[k])) as any[]
+    const values = keys.map((k) => (k === "models" ? JSON.stringify(storedSets[k]) : storedSets[k])) as any[]
     await db.unsafe(`UPDATE providers SET ${setClause} WHERE id = ${id}`, values)
   },
 
