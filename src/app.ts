@@ -6,6 +6,8 @@ import { createTimingMiddleware } from "./middleware/timing.js"
 import { createProxyRoutes } from "./routes/proxy.js"
 import { createAdminRoutes } from "./routes/admin.js"
 import { createDashboardRoutes } from "./routes/dashboard.js"
+import { createDocsRoutes } from "./routes/docs.js"
+import { createRateLimitMiddleware } from "./middleware/rate-limit.js"
 
 let initPromise: Promise<void> | null = null
 
@@ -28,6 +30,7 @@ export function createApp() {
   const app = new Hono()
 
   app.use("*", logger())
+  app.use("/v1/*", createRateLimitMiddleware(120))
   app.use("*", createTimingMiddleware())
   app.use("*", async (c, next) => {
     await ensureInit()
@@ -37,6 +40,7 @@ export function createApp() {
   app.route("/v1", createProxyRoutes(() => getDb()))
   app.route("/admin", createAdminRoutes(() => getDb(), config.adminApiKey))
   app.route("/dashboard", createDashboardRoutes(() => getDb(), config.adminApiKey))
+  app.route("/docs", createDocsRoutes())
 
   app.get("/", (c) =>
     c.json({
@@ -46,6 +50,7 @@ export function createApp() {
         proxy: ["/v1/chat/completions", "/v1/completions", "/v1/embeddings", "/v1/responses", "/v1/messages", "/v1/models"],
         admin: ["/admin/customers", "/admin/providers", "/admin/stats", "/admin/health"],
         dashboard: "/dashboard",
+        docs: "/docs",
       },
     })
   )

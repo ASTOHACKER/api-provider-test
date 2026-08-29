@@ -31,5 +31,12 @@ export function defaultProviders(): ProviderConfig[] {
       api_key: process.env.GLM_API_KEY || "",
       models: ["glm-5.2", "glm-5.1", "glm-5.3", "glm-5.3-flash"],
     },
+    {
+      name: "google",
+      type: "google",
+      base_url: "https://generativelanguage.googleapis.com/v1beta",
+      api_key: process.env.GOOGLE_API_KEY || "",
+      models: ["gemini-2.0-flash", "gemini-2.5-flash", "gemini-2.5-pro"],
+    },
   ]
 }

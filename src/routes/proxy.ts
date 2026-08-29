@@ -225,7 +225,7 @@ async function handleStreamOrError(
       }
     } finally {
       reader.releaseLock()
-      const usage = extractStreamUsage(collected, provider.type)
+      const usage = extractStreamUsage(collected, provider.type === "anthropic" ? "anthropic" : "openai")
       await recordUsage(
         db,
         {

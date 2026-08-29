@@ -48,7 +48,7 @@ CREATE TABLE IF NOT EXISTS quotas (
 CREATE TABLE IF NOT EXISTS providers (
   id SERIAL PRIMARY KEY,
   name TEXT NOT NULL UNIQUE,
-  type TEXT NOT NULL CHECK(type IN ('openai','anthropic')),
+  type TEXT NOT NULL CHECK(type IN ('openai','anthropic','google')),
   base_url TEXT NOT NULL,
   api_key TEXT NOT NULL DEFAULT '',
   api_key_encrypted TEXT NOT NULL DEFAULT '',
@@ -78,6 +78,8 @@ CREATE INDEX IF NOT EXISTS idx_usage_provider ON usage_logs(provider_id);
 
 export async function migrate(db: ReturnType<typeof postgres>) {
   await db.unsafe(SCHEMA)
+  await db.unsafe(`ALTER TABLE providers DROP CONSTRAINT IF EXISTS providers_type_check`)
+  await db.unsafe(`ALTER TABLE providers ADD CONSTRAINT providers_type_check CHECK(type IN ('openai','anthropic','google'))`)
   await db`ALTER TABLE providers ADD COLUMN IF NOT EXISTS api_key_encrypted TEXT NOT NULL DEFAULT ''`
 
   const providers = await db<{ id: number; api_key: string; api_key_encrypted: string }[]>`

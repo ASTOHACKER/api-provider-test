@@ -1,4 +1,4 @@
-export type ProviderType = "openai" | "anthropic"
+export type ProviderType = "openai" | "anthropic" | "google"
 
 export interface Provider {
   id: number
